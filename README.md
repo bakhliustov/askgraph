@@ -119,6 +119,22 @@ The TUI (`askgraph tui .`) puts the same data in a chat interface — a god-node
 
 [`karpathy/autoresearch`](https://github.com/karpathy/autoresearch) (Python) indexes to 54 nodes / 50 symbols in seconds. JS/TS parsing needs the `tree-sitter-full` extra.
 
+## Evaluation (measured, not asserted)
+
+Retrieval quality is measured, not hand-waved. Label cases as `question → [file or file::Symbol]` and run:
+
+```bash
+askgraph eval . --cases evals/llm-council.yaml -k 8
+```
+
+It reports **recall@k / MRR / hit-rate** and isolates each signal (vector → +lexical → +graph) so you can see what actually helps on *your* repo. Sample case sets live in [`evals/`](evals/).
+
+Findings from the bundled suite (tinygrad/nn, autoresearch, llm-council, ~24 cases) drove real decisions:
+- **Hybrid lexical fusion** (identifier/symbol-name matching) lifts mean **MRR 0.675 → 0.701** with **no recall regression** — but only at a *gentle* weight (`ASKGRAPH_LEXICAL_ALPHA=0.2`); heavier weights and naive rank-fusion *hurt* retrieval, which the harness caught before they shipped.
+- Vector recall is already strong (1.0 on two of three repos); remaining misses are chunking-bound, not similarity-bound.
+
+This eval-first loop is the project's compass for retrieval work — see [CHANGELOG.md](CHANGELOG.md) for the running results.
+
 ## Use with AI agents (MCP)
 
 ```bash
