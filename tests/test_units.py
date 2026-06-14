@@ -66,6 +66,19 @@ def test_symbol_history_empty_when_no_blame():
     assert LocalIndexer._symbol_history({}, 1, 10) == []
 
 
+def test_dedupe_edges_drops_duplicates_preserving_order():
+    edges = [
+        {"source": "file:a.py", "target": "symbol:a.py:f", "type": "contains"},
+        {"source": "file:a.py", "target": "import os", "type": "imports"},
+        {"source": "file:a.py", "target": "symbol:a.py:f", "type": "contains"},  # dup
+        {"source": "file:a.py", "target": "import os", "type": "imports"},  # dup
+        {"source": "file:b.py", "target": "symbol:b.py:g", "type": "contains"},
+    ]
+    out = LocalIndexer._dedupe_edges(edges)
+    assert len(out) == 3
+    assert [e["target"] for e in out] == ["symbol:a.py:f", "import os", "symbol:b.py:g"]
+
+
 def test_rows_from_query_is_none_safe():
     # An empty/None Chroma result must not raise.
     assert _rows_from_query({"ids": [[]]}) == []

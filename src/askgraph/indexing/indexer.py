@@ -161,6 +161,18 @@ class LocalIndexer:
         return line_info
 
     @staticmethod
+    def _dedupe_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Drop duplicate edges (same source/target/type), preserving order."""
+        seen: set[tuple[str, str, str]] = set()
+        out: list[dict[str, Any]] = []
+        for e in edges:
+            key = (e.get("source", ""), e.get("target", ""), e.get("type", ""))
+            if key not in seen:
+                seen.add(key)
+                out.append(e)
+        return out
+
+    @staticmethod
     def _symbol_history(
         blame_map: dict[int, dict[str, str]], start_line: int, end_line: int
     ) -> list[dict[str, str]]:
@@ -318,6 +330,10 @@ class LocalIndexer:
                 progress.stop()
 
         _save_metadata(self.index_dir, self.metadata)
+
+        # Deduplicate structural edges (same source/target/type) so the stored graph
+        # stays compact and every downstream count (CLI, report, viz) agrees.
+        graph_edges = self._dedupe_edges(graph_edges)
 
         # Persist the lightweight structural graph (nodes + edges). This is the
         # foundation for reports, neighborhood expansion, god-node detection, and

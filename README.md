@@ -89,11 +89,15 @@ Indexing tinygrad's `nn/` package (the neural-network layers) with provenance en
 ```
 $ ASKGRAPH_USE_GIT_BLAME=true askgraph index .
 ✓ Indexed 6 files, added 645 chunks.
-   Structural graph: 311 nodes, 337 edges  →  graph.json
+   Structural graph: 311 nodes, 309 edges  →  graph.json
 ✓ Report artifacts generated: GRAPH_REPORT.md + graph.html
 ```
 
-That's **311 graph nodes** (276 functions, 29 classes, 6 files) and **337 edges** (contains/imports) — all built locally. Each symbol carries real git history, e.g.:
+That's a **311-node graph** — 6 files plus 305 symbols (276 functions, 29 classes) wired by contains/imports edges, all built locally. The auto-generated `graph.html` is a self-contained, interactive view:
+
+![askgraph graph.html — tinygrad/nn structural graph](docs/graph.png)
+
+Each symbol also carries real git history (with `ASKGRAPH_USE_GIT_BLAME=true`), e.g.:
 
 ```
 nn/__init__.py :: class Linear
