@@ -6,8 +6,10 @@ the structural/graph logic directly so the core stays regression-safe.
 
 from __future__ import annotations
 
+import pytest
+
 from askgraph.indexing.indexer import LocalIndexer
-from askgraph.indexing.parsers import parse_file, parse_python
+from askgraph.indexing.parsers import get_js_language, parse_file, parse_python
 from askgraph.query.retriever import _rows_from_query
 
 
@@ -34,6 +36,22 @@ def test_parse_file_skips_unsupported_languages():
 def test_parse_file_handles_python():
     parsed = parse_file("def hello():\n    return 'hi'\n", "mod.py")
     assert any(s["name"] == "hello" for s in parsed["symbols"])
+
+
+def test_parse_javascript_extracts_functions_and_arrow_components():
+    if get_js_language() is None:
+        pytest.skip("tree-sitter-javascript not installed (install the tree-sitter-full extra)")
+    src = (
+        "import React from 'react'\n"
+        "function Header() { return null }\n"
+        "export const App = () => { return <Header /> }\n"
+        "const handler = function () { return 1 }\n"
+        "class Widget {}\n"
+    )
+    parsed = parse_file(src, "App.jsx")
+    names = {s["name"] for s in parsed["symbols"]}
+    assert {"Header", "App", "handler", "Widget"} <= names  # incl. arrow + function-expr
+    assert parsed["imports"]  # import line captured
 
 
 def test_symbol_history_is_most_recent_first_and_deduped():

@@ -114,18 +114,36 @@ def parse_javascript(source: str | bytes, path: str = "<unknown>") -> dict[str, 
         elif node.type in ("function_declaration", "class_declaration", "method_definition"):
             name_node = node.child_by_field_name("name")
             name = name_node.text.decode() if name_node else "<anon>"
-            start_line = node.start_point[0] + 1
-            end_line = node.end_point[0] + 1
             ntype = "class" if "class" in node.type else "function"
             symbols.append(
                 {
                     "type": ntype,
                     "name": name,
-                    "start_line": start_line,
-                    "end_line": end_line,
+                    "start_line": node.start_point[0] + 1,
+                    "end_line": node.end_point[0] + 1,
                     "path": path,
                 }
             )
+        elif node.type == "variable_declarator":
+            # Arrow-function / function-expression components: `const Foo = () => {}`,
+            # `const bar = function () {}` — common in React and modern JS/TS.
+            value = node.child_by_field_name("value")
+            if value is not None and value.type in (
+                "arrow_function",
+                "function_expression",
+                "function",
+            ):
+                name_node = node.child_by_field_name("name")
+                if name_node is not None:
+                    symbols.append(
+                        {
+                            "type": "function",
+                            "name": name_node.text.decode(),
+                            "start_line": node.start_point[0] + 1,
+                            "end_line": node.end_point[0] + 1,
+                            "path": path,
+                        }
+                    )
         for child in node.children:
             visit(child)
 
