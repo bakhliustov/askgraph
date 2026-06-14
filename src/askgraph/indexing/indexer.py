@@ -62,6 +62,16 @@ def _save_metadata(index_dir: Path, meta: dict[str, Any]) -> None:
     (index_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
 
 
+def _load_graph(index_dir: Path) -> dict[str, Any]:
+    graph_path = index_dir / "graph.json"
+    if graph_path.exists():
+        graph: dict[str, Any] = json.loads(graph_path.read_text())
+        graph.setdefault("nodes", [])
+        graph.setdefault("edges", [])
+        return graph
+    return {"version": "0.1", "nodes": [], "edges": []}
+
+
 def _make_progress() -> Progress:
     return Progress(
         SpinnerColumn(),
@@ -183,6 +193,51 @@ class LocalIndexer:
                     edges.append({"source": caller_id, "target": ids[0], "type": "calls"})
         return edges
 
+    @classmethod
+    def _merge_graph(
+        cls,
+        old_graph: dict[str, Any],
+        affected_files: set[str],
+        new_nodes: list[dict[str, Any]],
+        new_edges: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Merge freshly-parsed graph fragments into the existing graph.
+
+        Incremental re-index only re-parses ``affected_files`` (changed + deleted).
+        We drop every old node/edge belonging to those files, then splice in the
+        fresh ones. "Belonging" is keyed on a node's ``path`` (both file and symbol
+        nodes carry it) and, for edges, on the file of their *source* node — which
+        is how each edge was originally emitted (contains/imports from a file node,
+        calls from a caller symbol).
+
+        Finally we prune structural edges whose endpoints no longer exist (e.g. a
+        call into a now-deleted file) so the merged graph stays internally
+        consistent. ``imports`` edges point at free-text module names rather than
+        node ids, so they are exempt from the target check.
+        """
+        old_nodes = old_graph.get("nodes", [])
+        old_edges = old_graph.get("edges", [])
+        old_id_to_path = {n["id"]: n.get("path") for n in old_nodes}
+
+        kept_nodes = [n for n in old_nodes if n.get("path") not in affected_files]
+        kept_edges = [
+            e for e in old_edges if old_id_to_path.get(e.get("source")) not in affected_files
+        ]
+
+        merged_nodes = kept_nodes + new_nodes
+        merged_edges = kept_edges + new_edges
+
+        node_ids = {n["id"] for n in merged_nodes}
+        pruned_edges: list[dict[str, Any]] = []
+        for e in merged_edges:
+            if e.get("source") not in node_ids:
+                continue
+            if e.get("type") != "imports" and e.get("target") not in node_ids:
+                continue
+            pruned_edges.append(e)
+
+        return merged_nodes, cls._dedupe_edges(pruned_edges)
+
     @staticmethod
     def _dedupe_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Drop duplicate edges (same source/target/type), preserving order."""
@@ -280,9 +335,17 @@ class LocalIndexer:
         }
 
     def index(self, force: bool = False, show_progress: bool = True) -> dict[str, Any]:
-        """Discover, chunk, embed, and store. Returns stats."""
+        """Discover, chunk, embed, and store. Returns stats.
+
+        Non-force runs are *incremental*: only changed/new files are re-parsed and
+        re-embedded, deleted files are pruned, and the persisted graph + Chroma
+        collection are updated in place rather than rebuilt from scratch.
+        """
         files = discover_files(self.target_dir)
         logger.info("Found %d candidate files", len(files))
+
+        rel_on_disk = {str(f.relative_to(self.target_dir)) for f in files}
+        prev_files = set(self.metadata.get("files", {}).keys())
 
         new_or_changed = []
         for f in files:
@@ -291,11 +354,18 @@ class LocalIndexer:
             if force or not prev or prev.get("hash") != fh:
                 new_or_changed.append(f)
 
-        if not new_or_changed and not force:
+        # Files we indexed before that have since been removed from disk.
+        deleted_files = sorted(prev_files - rel_on_disk) if not force else []
+
+        if not new_or_changed and not deleted_files and not force:
             logger.info("No changes detected. Index is up to date.")
             return {"files_indexed": 0, "chunks_added": 0, "status": "up-to-date"}
 
-        # For a clean force we can delete collection contents (simple approach for v0)
+        changed_rel = {str(f.relative_to(self.target_dir)) for f in new_or_changed}
+        affected_files = changed_rel | set(deleted_files)
+
+        # For a clean force we can delete collection contents (simple approach for v0).
+        # Otherwise start from the existing graph and surgically replace affected files.
         if force:
             with contextlib.suppress(Exception):
                 self.client.delete_collection("askgraph_code")
@@ -304,6 +374,18 @@ class LocalIndexer:
                 metadata={"hnsw:space": "cosine"},
             )
             self.metadata["files"] = {}
+            old_graph: dict[str, Any] = {"version": "0.1", "nodes": [], "edges": []}
+        else:
+            old_graph = _load_graph(self.index_dir)
+            # Drop stale vectors: chunk ids are deterministic, so changed content
+            # would otherwise keep its old embedding and removed symbols would
+            # linger. Deleting every chunk of an affected file before re-adding the
+            # current ones keeps Chroma exact and counts stable across re-runs.
+            for rel in affected_files:
+                with contextlib.suppress(Exception):
+                    self.collection.delete(where={"file_path": rel})
+            for rel in deleted_files:
+                self.metadata.get("files", {}).pop(rel, None)
 
         all_chunks: list[CodeChunk] = []
         graph_nodes: list[dict[str, Any]] = []
@@ -331,76 +413,77 @@ class LocalIndexer:
 
             graph_edges.extend(self._resolve_call_edges(graph_nodes, pending_calls))
 
-            if not all_chunks:
-                return {"files_indexed": 0, "chunks_added": 0}
-
             # Embed locally (batched so the heavy CPU phase shows progress).
-            texts = [c.text for c in all_chunks]
-            embeddings: list = []
-            batch_size = 64
-            n = len(texts)
-            embed_task = (
-                progress.add_task("Embedding chunks (local CPU)", total=n)
-                if progress is not None
-                else None
-            )
-            for i in range(0, n, batch_size):
-                embeddings.extend(list(self.embedder.embed(texts[i : i + batch_size])))
-                done = min(i + batch_size, n)
-                if progress is not None and embed_task is not None:
-                    progress.update(embed_task, completed=done)
-                elif done == n or (i // batch_size) % 10 == 0:
-                    logger.info("Embedded %d/%d chunks", done, n)
+            if all_chunks:
+                texts = [c.text for c in all_chunks]
+                embeddings: list = []
+                batch_size = 64
+                n = len(texts)
+                embed_task = (
+                    progress.add_task("Embedding chunks (local CPU)", total=n)
+                    if progress is not None
+                    else None
+                )
+                for i in range(0, n, batch_size):
+                    embeddings.extend(list(self.embedder.embed(texts[i : i + batch_size])))
+                    done = min(i + batch_size, n)
+                    if progress is not None and embed_task is not None:
+                        progress.update(embed_task, completed=done)
+                    elif done == n or (i // batch_size) % 10 == 0:
+                        logger.info("Embedded %d/%d chunks", done, n)
 
-            self.collection.add(
-                ids=[c.chunk_id for c in all_chunks],
-                documents=texts,
-                metadatas=[c.to_metadata() for c in all_chunks],  # type: ignore[arg-type]
-                embeddings=embeddings,  # type: ignore[arg-type]
-            )
+                self.collection.add(
+                    ids=[c.chunk_id for c in all_chunks],
+                    documents=texts,
+                    metadatas=[c.to_metadata() for c in all_chunks],  # type: ignore[arg-type]
+                    embeddings=embeddings,  # type: ignore[arg-type]
+                )
         finally:
             if progress is not None:
                 progress.stop()
 
         _save_metadata(self.index_dir, self.metadata)
 
-        # Deduplicate structural edges (same source/target/type) so the stored graph
-        # stays compact and every downstream count (CLI, report, viz) agrees.
-        graph_edges = self._dedupe_edges(graph_edges)
-
-        # Persist the lightweight structural graph (nodes + edges). This is the
+        # Merge the freshly-parsed fragments into the existing graph (removing the
+        # affected files' old nodes/edges first), then dedupe. This is the
         # foundation for reports, neighborhood expansion, god-node detection, and
-        # agent context.
-        if graph_nodes or graph_edges:
-            graph_data = {
-                "version": "0.1",
-                "nodes": graph_nodes,
-                "edges": graph_edges,
-                "stats": {
-                    "num_files": len([n for n in graph_nodes if n.get("type") == "file"]),
-                    "num_symbols": len(
-                        [n for n in graph_nodes if n.get("type") in ("function", "class")]
-                    ),
-                },
-            }
-            (self.index_dir / "graph.json").write_text(json.dumps(graph_data, indent=2))
-            logger.info(
-                "Wrote structural graph.json (%d nodes, %d edges)",
-                len(graph_nodes),
-                len(graph_edges),
-            )
+        # agent context — and keeps it correct across incremental re-indexes.
+        merged_nodes, merged_edges = self._merge_graph(
+            old_graph, affected_files, graph_nodes, graph_edges
+        )
+        graph_data = {
+            "version": "0.1",
+            "nodes": merged_nodes,
+            "edges": merged_edges,
+            "stats": {
+                "num_files": len([n for n in merged_nodes if n.get("type") == "file"]),
+                "num_symbols": len(
+                    [n for n in merged_nodes if n.get("type") in ("function", "class")]
+                ),
+            },
+        }
+        (self.index_dir / "graph.json").write_text(json.dumps(graph_data, indent=2))
+        logger.info(
+            "Wrote structural graph.json (%d nodes, %d edges)",
+            len(merged_nodes),
+            len(merged_edges),
+        )
 
         logger.info(
-            "Indexed %d new/changed files → %d chunks", len(new_or_changed), len(all_chunks)
+            "Indexed %d new/changed files (%d deleted) → %d chunks",
+            len(new_or_changed),
+            len(deleted_files),
+            len(all_chunks),
         )
 
         return {
             "files_indexed": len(new_or_changed),
+            "files_deleted": len(deleted_files),
             "chunks_added": len(all_chunks),
             "total_files": len(self.metadata.get("files", {})),
             "index_dir": str(self.index_dir),
-            "graph_nodes": len(graph_nodes),
-            "graph_edges": len(graph_edges),
+            "graph_nodes": len(merged_nodes),
+            "graph_edges": len(merged_edges),
         }
 
 

@@ -447,16 +447,59 @@ def report(
     console.print("Both files live inside the index directory and can be committed if desired.")
 
 
+def _run_labeled_eval(retriever: LocalRetriever, cases_path: Path, top_k: int) -> None:
+    """Ground-truth eval: recall@k / MRR / hit-rate, graph-on vs graph-off."""
+    from rich.table import Table
+
+    from askgraph.eval import evaluate, load_cases
+
+    cases = load_cases(cases_path)
+    if not cases:
+        console.print(f"[yellow]No cases found in {cases_path}.[/yellow]")
+        return
+
+    with_graph = evaluate(retriever, cases, top_k=top_k, expand=True)
+    without_graph = evaluate(retriever, cases, top_k=top_k, expand=False)
+
+    table = Table(title=f"Retrieval eval — {len(cases)} cases, top_k={top_k}", border_style="green")
+    table.add_column("Metric")
+    table.add_column("Vector only", justify="right")
+    table.add_column("+ Graph", justify="right")
+    table.add_column("Δ", justify="right")
+    for key, label in (("recall_at_k", "Recall@k"), ("mrr", "MRR"), ("hit_rate", "Hit rate")):
+        base = without_graph["metrics"][key]
+        graph = with_graph["metrics"][key]
+        delta = graph - base
+        sign = "+" if delta >= 0 else ""
+        table.add_row(label, f"{base:.3f}", f"{graph:.3f}", f"{sign}{delta:.3f}")
+    console.print(table)
+    console.print(
+        "[dim]Vector only = pure embedding similarity; + Graph = with structural expansion.[/dim]"
+    )
+
+
 @app.command()
 def eval(
     path: Annotated[
         Path, typer.Argument(help="Path to evaluate on (public repo recommended)")
     ] = Path("."),
     queries: Annotated[int, typer.Option("--queries", "-q", help="Number of sample queries")] = 5,
+    cases: Annotated[
+        Path | None,
+        typer.Option(
+            "--cases",
+            "-c",
+            help="Labeled eval cases (JSON/YAML: [{question, relevant:[file or file::Symbol]}]). "
+            "Reports recall@k / MRR with graph expansion on vs off.",
+        ),
+    ] = None,
+    top_k: Annotated[int, typer.Option("--top-k", "-k")] = 8,
 ) -> None:
-    """Lightweight eval harness: run sample queries, report retrieval coverage, provenance hit rate, rough token savings.
+    """Evaluate retrieval quality.
 
-    Useful for publishing benchmarks on public repos (ties into your finrag-eval experience).
+    With ``--cases`` (a labeled file), reports recall@k / MRR / hit-rate and
+    compares structural-graph expansion on vs off. Without it, reports a quick
+    coverage summary over generic sample queries.
     """
     target = path.resolve()
     index_path = get_index_path(target)
@@ -465,6 +508,11 @@ def eval(
         index_codebase(target)
 
     retriever = LocalRetriever(target)
+
+    if cases is not None:
+        _run_labeled_eval(retriever, cases.resolve(), top_k)
+        return
+
     sample_queries = [
         "How does the main entrypoint or app initialization work?",
         "What are the core data models or classes and their relationships?",

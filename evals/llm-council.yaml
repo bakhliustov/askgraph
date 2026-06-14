@@ -1,0 +1,47 @@
+# Labeled retrieval-eval cases for karpathy/llm-council.
+#
+#   git clone https://github.com/karpathy/llm-council /path/to/llm-council
+#   cd /path/to/llm-council && askgraph index .
+#   askgraph eval . --cases /path/to/askgraph/evals/llm-council.yaml -k 8
+#
+# Each case: a question + the files/symbols a good retrieval should surface.
+# Targets are "path/to/file.py" or "path/to/file.py::SymbolName".
+
+- question: How does the council run all three stages end to end?
+  relevant:
+    - backend/council.py::run_full_council
+    - backend/council.py::stage1_collect_responses
+
+- question: How are model responses collected from OpenRouter in parallel?
+  relevant:
+    - backend/openrouter.py::query_models_parallel
+    - backend/openrouter.py::query_model
+
+- question: How are model rankings parsed and aggregated?
+  relevant:
+    - backend/council.py::parse_ranking_from_text
+    - backend/council.py::calculate_aggregate_rankings
+
+- question: How are conversations persisted to and loaded from disk?
+  relevant:
+    - backend/storage.py::save_conversation
+    - backend/storage.py::get_conversation
+
+- question: How does the HTTP API create a new conversation?
+  relevant:
+    - backend/main.py::create_conversation
+    - backend/main.py::CreateConversationRequest
+
+- question: How does the frontend send a chat message and stream the reply?
+  relevant:
+    - frontend/src/api.js::sendMessageStream
+    - frontend/src/App.jsx::handleSendMessage
+
+- question: Where is the main chat interface rendered in the UI?
+  relevant:
+    - frontend/src/components/ChatInterface.jsx::ChatInterface
+    - frontend/src/App.jsx::App
+
+- question: How is the final synthesized answer shown to the user?
+  relevant:
+    - frontend/src/components/Stage3.jsx::Stage3
