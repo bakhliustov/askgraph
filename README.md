@@ -37,7 +37,7 @@ AI coding agents write code fast. The bottleneck is now *understanding what was 
 ```
 discover → chunk (tree-sitter) → embed (fastembed) → Chroma
                      │
-                     └── structural graph.json (files, symbols, imports, git blame)
+                     └── structural graph.json (files, symbols, imports, calls, git blame)
                                   │
 ask ── hybrid retrieve (semantic + graph neighbors) ── synthesize (Ollama) ── cited answer
 ```
@@ -93,7 +93,7 @@ $ ASKGRAPH_USE_GIT_BLAME=true askgraph index .
 ✓ Report artifacts generated: GRAPH_REPORT.md + graph.html
 ```
 
-That's a **311-node graph** — 6 files plus 305 symbols (276 functions, 29 classes) wired by contains/imports edges, all built locally. The auto-generated `graph.html` is a self-contained, interactive view:
+That's a **311-node graph** — 6 files plus 305 symbols (276 functions, 29 classes) wired by contains / imports / calls edges, all built locally. The auto-generated `graph.html` is a self-contained, interactive view:
 
 ![askgraph graph.html — tinygrad/nn structural graph](docs/graph.png)
 

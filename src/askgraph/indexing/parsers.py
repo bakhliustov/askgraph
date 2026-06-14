@@ -47,6 +47,43 @@ def get_js_language() -> Language | None:
     return _js_language
 
 
+def _callee_name(fn_node: Any) -> str | None:
+    """Best-effort callee name from a call's `function` node.
+
+    `foo(...)` -> "foo"; `obj.bar(...)` / `self.bar(...)` -> "bar". Anything else
+    (subscripts, calls-of-calls) returns None.
+    """
+    if fn_node is None:
+        return None
+    if fn_node.type == "identifier":
+        name: str = fn_node.text.decode()
+        return name
+    if fn_node.type == "attribute":
+        attr = fn_node.child_by_field_name("attribute")
+        if attr is not None:
+            attr_name: str = attr.text.decode()
+            return attr_name
+    return None
+
+
+def _attach_calls(symbols: list[dict[str, Any]], calls_raw: list[tuple[str, int]]) -> None:
+    """Attribute each call to the innermost symbol whose line range contains it."""
+    for name, line in calls_raw:
+        container: dict[str, Any] | None = None
+        for s in symbols:
+            in_range = s["start_line"] <= line <= s["end_line"]
+            smaller = container is None or (s["end_line"] - s["start_line"]) < (
+                container["end_line"] - container["start_line"]
+            )
+            if in_range and smaller:
+                container = s
+        if container is not None and name != container["name"]:
+            container.setdefault("calls", []).append(name)
+    for s in symbols:
+        if "calls" in s:
+            s["calls"] = sorted(set(s["calls"]))
+
+
 def parse_python(source: str | bytes, path: str = "<unknown>") -> dict[str, Any]:
     """Parse Python source and return a simple structural summary + symbol list."""
     if isinstance(source, str):
@@ -58,6 +95,7 @@ def parse_python(source: str | bytes, path: str = "<unknown>") -> dict[str, Any]
     root = tree.root_node
     symbols: list[dict[str, Any]] = []
     imports: list[str] = []
+    calls_raw: list[tuple[str, int]] = []  # (callee_name, line_no)
 
     def visit(node: Any, depth: int = 0) -> None:
         if node.type in ("import_statement", "import_from_statement"):
@@ -66,21 +104,24 @@ def parse_python(source: str | bytes, path: str = "<unknown>") -> dict[str, Any]
         elif node.type in ("function_definition", "async_function_definition", "class_definition"):
             name_node = node.child_by_field_name("name")
             name = name_node.text.decode() if name_node else "<anon>"
-            start_line = node.start_point[0] + 1
-            end_line = node.end_point[0] + 1
             symbols.append(
                 {
                     "type": "function" if "function" in node.type else "class",
                     "name": name,
-                    "start_line": start_line,
-                    "end_line": end_line,
+                    "start_line": node.start_point[0] + 1,
+                    "end_line": node.end_point[0] + 1,
                     "path": path,
                 }
             )
+        elif node.type == "call":
+            callee = _callee_name(node.child_by_field_name("function"))
+            if callee:
+                calls_raw.append((callee, node.start_point[0] + 1))
         for child in node.children:
             visit(child, depth + 1)
 
     visit(root)
+    _attach_calls(symbols, calls_raw)
 
     return {
         "path": path,

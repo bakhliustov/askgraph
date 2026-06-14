@@ -161,6 +161,29 @@ class LocalIndexer:
         return line_info
 
     @staticmethod
+    def _resolve_call_edges(
+        graph_nodes: list[dict[str, Any]], pending_calls: list[tuple[str, list[str]]]
+    ) -> list[dict[str, Any]]:
+        """Turn collected call names into `calls` edges between repo symbols.
+
+        Resolution is by symbol name and intentionally conservative: a call edge
+        is added only when the callee name maps to exactly one symbol in the repo
+        (avoids fan-out noise from common names like ``__init__``/``forward``).
+        """
+        name_to_ids: dict[str, list[str]] = {}
+        for n in graph_nodes:
+            if n.get("type") in ("function", "class"):
+                name_to_ids.setdefault(n["name"], []).append(n["id"])
+
+        edges: list[dict[str, Any]] = []
+        for caller_id, names in pending_calls:
+            for nm in names:
+                ids = name_to_ids.get(nm, [])
+                if len(ids) == 1 and ids[0] != caller_id:
+                    edges.append({"source": caller_id, "target": ids[0], "type": "calls"})
+        return edges
+
+    @staticmethod
     def _dedupe_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Drop duplicate edges (same source/target/type), preserving order."""
         seen: set[tuple[str, str, str]] = set()
@@ -191,8 +214,13 @@ class LocalIndexer:
         all_chunks: list[CodeChunk],
         graph_nodes: list[dict[str, Any]],
         graph_edges: list[dict[str, Any]],
+        pending_calls: list[tuple[str, list[str]]],
     ) -> None:
-        """Chunk one file, record its file/symbol nodes, edges, and metadata."""
+        """Chunk one file, record its file/symbol nodes, edges, and metadata.
+
+        Records (caller_symbol_id, [called_names]) into ``pending_calls`` for
+        repo-wide call-edge resolution after all files are seen.
+        """
         rel_path = str(f.relative_to(self.target_dir))
         text = f.read_text(encoding="utf-8", errors="ignore")
         lang = "python" if f.suffix == ".py" else f.suffix.lstrip(".")
@@ -238,6 +266,8 @@ class LocalIndexer:
 
                 graph_nodes.append(sym_node)
                 graph_edges.append({"source": file_node_id, "target": sym_id, "type": "contains"})
+                if sym.get("calls"):
+                    pending_calls.append((sym_id, sym["calls"]))
             for imp in parsed.get("imports", []):
                 graph_edges.append({"source": file_node_id, "target": imp, "type": "imports"})
         except Exception:
@@ -278,6 +308,7 @@ class LocalIndexer:
         all_chunks: list[CodeChunk] = []
         graph_nodes: list[dict[str, Any]] = []
         graph_edges: list[dict[str, Any]] = []
+        pending_calls: list[tuple[str, list[str]]] = []
 
         progress = _make_progress() if show_progress else None
         if progress is not None:
@@ -291,12 +322,14 @@ class LocalIndexer:
             )
             for f in new_or_changed:
                 try:
-                    self._process_file(f, all_chunks, graph_nodes, graph_edges)
+                    self._process_file(f, all_chunks, graph_nodes, graph_edges, pending_calls)
                 except Exception as e:
                     logger.warning("Failed to process %s: %s", f, e)
                 finally:
                     if progress is not None and parse_task is not None:
                         progress.advance(parse_task)
+
+            graph_edges.extend(self._resolve_call_edges(graph_nodes, pending_calls))
 
             if not all_chunks:
                 return {"files_indexed": 0, "chunks_added": 0}

@@ -84,6 +84,40 @@ def test_symbol_history_empty_when_no_blame():
     assert LocalIndexer._symbol_history({}, 1, 10) == []
 
 
+def test_parse_python_extracts_calls_on_innermost_symbol():
+    src = (
+        "def helper():\n"
+        "    return 1\n"
+        "\n"
+        "def main():\n"
+        "    x = helper()\n"
+        "    obj.method()\n"
+        "    return x\n"
+    )
+    parsed = parse_python(src, "m.py")
+    main = next(s for s in parsed["symbols"] if s["name"] == "main")
+    assert "helper" in main["calls"]
+    assert "method" in main["calls"]  # attribute call -> attribute name
+    helper = next(s for s in parsed["symbols"] if s["name"] == "helper")
+    assert "calls" not in helper  # helper makes no calls
+
+
+def test_resolve_call_edges_unambiguous_only():
+    nodes = [
+        {"id": "symbol:a.py:main", "type": "function", "name": "main", "path": "a.py"},
+        {"id": "symbol:a.py:helper", "type": "function", "name": "helper", "path": "a.py"},
+        {"id": "symbol:b.py:helper", "type": "function", "name": "helper", "path": "b.py"},
+        {"id": "symbol:a.py:solo", "type": "function", "name": "solo", "path": "a.py"},
+    ]
+    pending = [("symbol:a.py:main", ["solo", "helper", "missing"])]
+    edges = LocalIndexer._resolve_call_edges(nodes, pending)
+    targets = [(e["target"], e["type"]) for e in edges]
+    # "solo" resolves uniquely; "helper" is ambiguous (2 defs) → skipped; "missing" → no node.
+    assert ("symbol:a.py:solo", "calls") in targets
+    assert all(t != "symbol:a.py:helper" and t != "symbol:b.py:helper" for t, _ in targets)
+    assert len(edges) == 1
+
+
 def test_dedupe_edges_drops_duplicates_preserving_order():
     edges = [
         {"source": "file:a.py", "target": "symbol:a.py:f", "type": "contains"},

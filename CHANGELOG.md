@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Call-graph edges:** the structural graph now records `calls` relationships between Python symbols (in addition to `contains`/`imports`), enriching blast-radius, community detection, god-node ranking, and graph-aware retrieval. Resolution is by symbol name, intra-repo, and conservative (unambiguous names only).
 - JS/TS parsing now also extracts arrow-function and function-expression symbols (`const Foo = () => {}`), so React components and modern JS/TS handlers show up in the graph — not just `function`/`class` declarations.
 - Skip machine-generated/vendored files by default: `autogen/` and `generated/` dirs, plus files larger than `ASKGRAPH_MAX_FILE_BYTES` (256 KB). Keeps blobs like tinygrad's `runtime/autogen/` ctypes bindings out of the index.
 - Rich progress bars for the parse and embed phases of `index`.
