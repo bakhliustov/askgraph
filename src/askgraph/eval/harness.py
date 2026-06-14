@@ -92,18 +92,29 @@ def load_cases(path: Path) -> list[EvalCase]:
 
 
 def evaluate(
-    retriever: Any, cases: list[EvalCase], top_k: int = 8, expand: bool = True
+    retriever: Any,
+    cases: list[EvalCase],
+    top_k: int = 8,
+    expand: bool = True,
+    lexical: bool = False,
 ) -> dict[str, Any]:
     """Run each case through the retriever and return aggregate + per-case metrics.
 
-    ``expand`` toggles structural graph expansion, so callers can compare
-    graph-on vs graph-off retrieval on the same labeled set.
+    ``expand`` toggles structural graph expansion and ``lexical`` toggles
+    identifier/symbol-name fusion, so callers can isolate each signal's effect
+    on the same labeled set (e.g. pure vector vs + lexical vs + lexical + graph).
     """
     per_case: list[dict[str, float]] = []
     details: list[dict[str, Any]] = []
     for case in cases:
-        hits = retriever.retrieve_hybrid(case.question, top_k=top_k, expand=expand)
+        hits = retriever.retrieve_hybrid(case.question, top_k=top_k, expand=expand, lexical=lexical)
         scores = score_case(hits, case, top_k)
         per_case.append(scores)
         details.append({"question": case.question, **scores})
-    return {"metrics": aggregate(per_case), "cases": details, "expand": expand, "top_k": top_k}
+    return {
+        "metrics": aggregate(per_case),
+        "cases": details,
+        "expand": expand,
+        "lexical": lexical,
+        "top_k": top_k,
+    }

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Hybrid lexical retrieval:** `retrieve_hybrid` now re-ranks a wider vector candidate pool by blending embedding similarity with identifier/symbol-name overlap (camelCase/snake_case-aware), which is a strong signal for code. On the `karpathy/llm-council` eval set this lifts **MRR 0.479 → 0.531** (relevant results ranked higher) with recall unchanged. On by default; toggle via `retrieve_hybrid(lexical=...)`.
 - **Ground-truth eval harness** (`askgraph.eval`): label cases as `question -> [file or file::Symbol]` and run `askgraph eval . --cases cases.yaml` to get recall@k / MRR / hit-rate, comparing structural-graph expansion **on vs off**. Includes a sample case set for `karpathy/llm-council`. (First finding: graph expansion does not yet change top-k ranking — motivating graph-aware reranking next.)
 - **Call-graph edges:** the structural graph now records `calls` relationships between Python symbols (in addition to `contains`/`imports`), enriching blast-radius, community detection, god-node ranking, and graph-aware retrieval. Resolution is by symbol name, intra-repo, and conservative (unambiguous names only).
 - JS/TS parsing now also extracts arrow-function and function-expression symbols (`const Foo = () => {}`), so React components and modern JS/TS handlers show up in the graph — not just `function`/`class` declarations.

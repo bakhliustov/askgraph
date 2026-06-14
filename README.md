@@ -28,7 +28,7 @@ AI coding agents write code fast. The bottleneck is now *understanding what was 
 `askgraph` builds a persistent, local, **structural** memory of a codebase that you and your agents can query instantly and privately:
 
 - **Local-only by default** — embeddings via [fastembed](https://github.com/qdrant/fastembed) (CPU), vectors in [Chroma](https://www.trychroma.com/), generation via [Ollama](https://ollama.com). No data leaves your machine.
-- **Structure, not just similarity** — tree-sitter extracts functions/classes/imports into a graph; retrieval expands semantic hits with real neighbors.
+- **Structure, not just similarity** — tree-sitter extracts functions/classes/imports/calls into a graph; retrieval fuses embeddings with identifier/symbol-name matching and expands hits with real neighbors.
 - **Git-aware** — optional per-symbol blame answers "when and why was this introduced?"
 - **Agent-native** — an MCP server exposes the same power to Claude Code, Cursor, Aider, etc.
 
@@ -39,7 +39,7 @@ discover → chunk (tree-sitter) → embed (fastembed) → Chroma
                      │
                      └── structural graph.json (files, symbols, imports, calls, git blame)
                                   │
-ask ── hybrid retrieve (semantic + graph neighbors) ── synthesize (Ollama) ── cited answer
+ask ── hybrid retrieve (semantic + lexical + graph neighbors) ── synthesize (Ollama) ── cited answer
 ```
 
 The index lives in a `.askgraph/` directory inside the target repo (gitignored by default): the Chroma vector store, `graph.json`, `metadata.json`, and the generated `GRAPH_REPORT.md` + self-contained `graph.html`.

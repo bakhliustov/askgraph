@@ -458,23 +458,34 @@ def _run_labeled_eval(retriever: LocalRetriever, cases_path: Path, top_k: int) -
         console.print(f"[yellow]No cases found in {cases_path}.[/yellow]")
         return
 
-    with_graph = evaluate(retriever, cases, top_k=top_k, expand=True)
-    without_graph = evaluate(retriever, cases, top_k=top_k, expand=False)
+    configs = [
+        ("Vector only", {"expand": False, "lexical": False}),
+        ("+ Lexical", {"expand": False, "lexical": True}),
+        ("+ Lexical + Graph", {"expand": True, "lexical": True}),
+    ]
+    runs = [(label, evaluate(retriever, cases, top_k=top_k, **kw)) for label, kw in configs]
+    base_metrics = runs[0][1]["metrics"]
 
     table = Table(title=f"Retrieval eval — {len(cases)} cases, top_k={top_k}", border_style="green")
-    table.add_column("Metric")
-    table.add_column("Vector only", justify="right")
-    table.add_column("+ Graph", justify="right")
-    table.add_column("Δ", justify="right")
-    for key, label in (("recall_at_k", "Recall@k"), ("mrr", "MRR"), ("hit_rate", "Hit rate")):
-        base = without_graph["metrics"][key]
-        graph = with_graph["metrics"][key]
-        delta = graph - base
-        sign = "+" if delta >= 0 else ""
-        table.add_row(label, f"{base:.3f}", f"{graph:.3f}", f"{sign}{delta:.3f}")
+    table.add_column("Config")
+    table.add_column("Recall@k", justify="right")
+    table.add_column("MRR", justify="right")
+    table.add_column("Hit rate", justify="right")
+    for label, run in runs:
+        m = run["metrics"]
+
+        def cell(key: str, m: dict = m, label: str = label) -> str:
+            val = m[key]
+            if label == "Vector only":
+                return f"{val:.3f}"
+            delta = val - base_metrics[key]
+            sign = "+" if delta >= 0 else ""
+            return f"{val:.3f} ({sign}{delta:.3f})"
+
+        table.add_row(label, cell("recall_at_k"), cell("mrr"), cell("hit_rate"))
     console.print(table)
     console.print(
-        "[dim]Vector only = pure embedding similarity; + Graph = with structural expansion.[/dim]"
+        "[dim]Vector only = pure embedding similarity. Deltas are vs the vector baseline.[/dim]"
     )
 
 
