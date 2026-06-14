@@ -1,0 +1,187 @@
+# askgraph
+
+```
+   ___        __                               __
+  /   |  ____/ /______  _________ _____  _____/ /_
+ / /| | / __  / ___/ _ \/ ___/ __ `/ __ \/ ___/ __ \
+/ ___ |/ /_/ (__  )  __/ /  / /_/ / /_/ / /__/ / / /
+\_/ |__/\__,_/____/\___/_/   \__, /\____/\___/_/ /_/
+                            /____/
+```
+
+**Local-first, privacy-first codebase Q&A powered by a structural knowledge graph + semantic search + git provenance.**
+
+Ask natural-language questions about any codebase. Everything runs on *your* machine — your code never leaves it. Agents get structured, low-token context with real architecture and history.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![CI](https://github.com/bakhliustov/askgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/bakhliustov/askgraph/actions/workflows/ci.yml)
+
+> Inspired by [Graphify](https://graphify.net/) (pre-computed structural graphs, god nodes, self-contained reports) and [OpenGSD](https://opengsd.net/) (terminal-native, honest, git-aware workflows). `askgraph` is the standalone, aggressively local companion: a fast CLI/TUI + MCP server you can point at any folder.
+
+---
+
+## Why
+
+AI coding agents write code fast. The bottleneck is now *understanding what was written and why*. The usual options are either too shallow (grep), too expensive/privacy-hostile (whole files into a giant cloud context), or locked to one IDE.
+
+`askgraph` builds a persistent, local, **structural** memory of a codebase that you and your agents can query instantly and privately:
+
+- **Local-only by default** — embeddings via [fastembed](https://github.com/qdrant/fastembed) (CPU), vectors in [Chroma](https://www.trychroma.com/), generation via [Ollama](https://ollama.com). No data leaves your machine.
+- **Structure, not just similarity** — tree-sitter extracts functions/classes/imports into a graph; retrieval expands semantic hits with real neighbors.
+- **Git-aware** — optional per-symbol blame answers "when and why was this introduced?"
+- **Agent-native** — an MCP server exposes the same power to Claude Code, Cursor, Aider, etc.
+
+## How it works
+
+```
+discover → chunk (tree-sitter) → embed (fastembed) → Chroma
+                     │
+                     └── structural graph.json (files, symbols, imports, git blame)
+                                  │
+ask ── hybrid retrieve (semantic + graph neighbors) ── synthesize (Ollama) ── cited answer
+```
+
+The index lives in a `.askgraph/` directory inside the target repo (gitignored by default): the Chroma vector store, `graph.json`, `metadata.json`, and the generated `GRAPH_REPORT.md` + self-contained `graph.html`.
+
+## Install
+
+```bash
+# from source (recommended while pre-release)
+uv pip install -e '.[git,tui,mcp]'
+
+# or pick extras à la carte
+uv pip install -e .                 # core CLI
+uv pip install -e '.[git]'          # + per-symbol git provenance (GitPython)
+uv pip install -e '.[tui]'          # + Textual chat UI
+uv pip install -e '.[mcp]'          # + MCP server for agents
+uv pip install -e '.[tree-sitter-full]'  # + JS/TS/Go/Rust parsers
+```
+
+The first index downloads a small embedding model (`BAAI/bge-small-en-v1.5`, ~100 MB) to your local cache, then runs fully offline. For synthesized answers, install [Ollama](https://ollama.com) and pull a small model:
+
+```bash
+ollama pull llama3.2   # or qwen2.5:3b, gemma2:2b — small local models work great
+```
+
+## Quick start
+
+```bash
+askgraph index .                       # build the index + graph + report
+askgraph ask "How does the Tensor autograd work?"
+askgraph status .                      # graph stats + god nodes
+askgraph report .                      # regenerate GRAPH_REPORT.md + graph.html
+askgraph export "the lowering pipeline" -o context.md   # rich context pack for agents
+askgraph tui .                         # interactive chat UI  (needs [tui])
+askgraph mcp .                         # run as an MCP server (needs [mcp])
+```
+
+Retrieval works without Ollama (`--raw` shows the hybrid chunks). With Ollama running you get a synthesized, **cited** answer. Per-symbol git provenance is opt-in (it runs `git blame` per file):
+
+```bash
+ASKGRAPH_USE_GIT_BLAME=true askgraph index .
+```
+
+## Real example: tinygrad
+
+Indexing tinygrad's `nn/` package (the neural-network layers) with provenance enabled:
+
+```
+$ ASKGRAPH_USE_GIT_BLAME=true askgraph index .
+✓ Indexed 6 files, added 645 chunks.
+   Structural graph: 311 nodes, 337 edges  →  graph.json
+✓ Report artifacts generated: GRAPH_REPORT.md + graph.html
+```
+
+That's **311 graph nodes** (276 functions, 29 classes, 6 files) and **337 edges** (contains/imports) — all built locally. Each symbol carries real git history, e.g.:
+
+```
+nn/__init__.py :: class Linear
+  [git provenance] last touched in 31424cda by chenyu on 2026-05-21
+  — Tensor.requires_grad -> is_param (#16325)  (+4 prior changes)
+```
+
+> **Performance note.** Embedding runs on CPU (~hundreds of chunks/min depending on chunk length), so the *first* index of a large repo takes a few minutes; queries afterward are instant. `askgraph` skips machine-generated/vendored blobs by default — `autogen/`, `generated/`, and files larger than `ASKGRAPH_MAX_FILE_BYTES` (256 KB) — which keeps tinygrad's giant `runtime/autogen/` ctypes bindings out of the index. Tune the scope by pointing `askgraph` at a subpackage (`askgraph index path/to/pkg`).
+
+## Use with AI agents (MCP)
+
+```bash
+uv pip install -e '.[mcp]'
+askgraph mcp .
+```
+
+The server exposes these tools to any MCP host (Claude Code, Cursor, Aider, …):
+
+| Tool | What it returns |
+|------|-----------------|
+| `index_codebase` | Build/refresh the index + graph |
+| `ask` | Hybrid-retrieved, synthesized, cited answer (+ provenance) |
+| `get_god_nodes` | Most-connected symbols/files (architecture hotspots) |
+| `get_communities` | Modularity-based module clusters |
+| `compute_blast_radius` | Impact analysis — nodes within N hops of a symbol/file |
+| `export_agent_context` | Rich JSON pack: chunks + subgraph + provenance + token estimate |
+
+The point: agents get low-token, high-signal, *structured* context (graph neighbors + history) instead of whole files dumped into the window — and nothing is exfiltrated.
+
+## Configuration
+
+All settings are overridable via `ASKGRAPH_*` env vars (or a `.env` file). The most useful:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ASKGRAPH_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | fastembed model (must match between index & query) |
+| `ASKGRAPH_DEFAULT_LLM_MODEL` | `llama3.2` | Ollama model for synthesis |
+| `ASKGRAPH_USE_GIT_BLAME` | `false` | Per-symbol git provenance (slower; runs `git blame` per file) |
+| `ASKGRAPH_MAX_FILE_BYTES` | `262144` | Skip files larger than this (0 = no limit) |
+| `ASKGRAPH_TOP_K` | `8` | Chunks retrieved per query |
+| `ASKGRAPH_LOCAL_ONLY` | `true` | Refuse remote providers |
+
+## Privacy
+
+- The index lives inside the target's `.askgraph/` (or a path you control) and is gitignored by default.
+- Embeddings and generation default to local runtimes (fastembed + Ollama).
+- `local_only=True` refuses remote providers unless you deliberately override it.
+- Delete the index directory any time — your source is untouched.
+
+## Project structure
+
+```
+src/askgraph/
+├── cli/          # Typer CLI (index, ask, status, report, export, eval, tui, mcp)
+├── indexing/     # discovery + tree-sitter parsing + chunking + git blame + Chroma
+├── query/        # hybrid retriever + graph expansion + Ollama synthesizer
+├── report/       # GRAPH_REPORT.md + self-contained graph.html generator
+├── tui/          # Textual chat UI
+├── mcp_server.py # MCP server for agents
+└── config.py
+```
+
+## Development
+
+```bash
+uv sync --group dev
+uv run ruff check . && uv run ruff format --check .
+uv run mypy src
+uv run pytest -q
+```
+
+CI runs lint, format, type-check, and tests on Python 3.11 and 3.12.
+
+## Roadmap
+
+- Deeper relationships (call graphs, type edges) beyond contains/imports
+- More first-class languages via the `tree-sitter-full` extra
+- Published benchmarks across several public repos
+- Editor extension
+
+## Contributing
+
+Issues and PRs welcome — especially more languages, richer graph algorithms, and retrieval-quality improvements. Please run `ruff`, `mypy`, and `pytest` before submitting.
+
+## License
+
+[MIT](LICENSE) — use it, fork it, ship with it.
+
+---
+
+**askgraph** — understand your code. Locally. Fast. With structure.
