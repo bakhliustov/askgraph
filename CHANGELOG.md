@@ -5,6 +5,18 @@ All notable changes to askgraph will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Skip machine-generated/vendored files by default: `autogen/` and `generated/` dirs, plus files larger than `ASKGRAPH_MAX_FILE_BYTES` (256 KB). Keeps blobs like tinygrad's `runtime/autogen/` ctypes bindings out of the index.
+- Rich progress bars for the parse and embed phases of `index`.
+- README screenshots: a rendered `graph.html` and the TUI.
+- `CONTRIBUTING.md`; expanded test suite (parser, provenance, retriever, edge dedup, and the graph/report algorithms behind `status`/`report`/MCP).
+
+### Changed
+- Structural edges are deduplicated, so the CLI, report, and viz report the same edge count.
+- CI bumped off Node 20 (checkout@v6, setup-python@v6, setup-uv@v8.2.0) with uv caching.
+
 ## [0.2.0] - 2026-06-12
 
 ### Added
