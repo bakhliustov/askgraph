@@ -37,6 +37,15 @@ class Settings(BaseSettings):
 
     # Retrieval
     top_k: int = Field(default=8, description="Default number of chunks to retrieve")
+    lexical_alpha: float = Field(
+        default=0.2,
+        description=(
+            "Weight of lexical (identifier/symbol-name) signal vs vector similarity in "
+            "hybrid retrieval, 0..1. 0 = pure vector. Tuned to ~0.2 on the eval suite: "
+            "improves ranking (MRR) without regressing recall; higher values start "
+            "dropping relevant results."
+        ),
+    )
     chunk_size: int = Field(
         default=600, description="Target chunk size in characters for fallback chunking"
     )

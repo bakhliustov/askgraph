@@ -1,0 +1,42 @@
+# Labeled retrieval-eval cases for karpathy/autoresearch.
+#
+#   git clone https://github.com/karpathy/autoresearch
+#   cd autoresearch && askgraph index .
+#   askgraph eval . --cases /path/to/askgraph/evals/autoresearch.yaml -k 8
+#
+# Paths are relative to the repo root (the index root used above).
+
+- question: How is the GPT model architecture defined?
+  relevant:
+    - train.py::GPT
+    - train.py::GPTConfig
+
+- question: How does causal self-attention work?
+  relevant:
+    - train.py::CausalSelfAttention
+
+- question: How is rotary positional embedding applied?
+  relevant:
+    - train.py::apply_rotary_emb
+
+- question: How is the Muon optimizer step computed and combined with AdamW?
+  relevant:
+    - train.py::muon_step_fused
+    - train.py::MuonAdamW
+
+- question: How is the training data downloaded in shards?
+  relevant:
+    - prepare.py::download_data
+    - prepare.py::download_single_shard
+
+- question: How is the byte-level tokenizer trained?
+  relevant:
+    - prepare.py::train_tokenizer
+
+- question: How is the data loader built for training batches?
+  relevant:
+    - prepare.py::make_dataloader
+
+- question: How is bits-per-byte computed during evaluation?
+  relevant:
+    - prepare.py::evaluate_bpb

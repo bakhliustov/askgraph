@@ -1,0 +1,43 @@
+# Labeled retrieval-eval cases for tinygrad's nn/ package.
+#
+#   git clone https://github.com/tinygrad/tinygrad
+#   cd tinygrad/tinygrad/nn && askgraph index .
+#   askgraph eval . --cases /path/to/askgraph/evals/tinygrad-nn.yaml -k 8
+#
+# Paths are relative to the nn/ package (the index root used above).
+
+- question: How does the Linear layer apply its weights and bias?
+  relevant:
+    - __init__.py::Linear
+
+- question: How are batch statistics normalized during training?
+  relevant:
+    - __init__.py::BatchNorm
+
+- question: How is layer normalization applied?
+  relevant:
+    - __init__.py::LayerNorm
+
+- question: How does a 2D convolution layer work?
+  relevant:
+    - __init__.py::Conv2d
+
+- question: How are the Adam and SGD optimizers implemented?
+  relevant:
+    - optim.py::Adam
+    - optim.py::SGD
+
+- question: How is a model state dict saved and loaded safely?
+  relevant:
+    - state.py::safe_save
+    - state.py::safe_load
+
+- question: How are a model's parameters and state dict collected?
+  relevant:
+    - state.py::get_parameters
+    - state.py::get_state_dict
+
+- question: How are the MNIST and CIFAR datasets loaded?
+  relevant:
+    - datasets.py::mnist
+    - datasets.py::cifar

@@ -236,10 +236,10 @@ class LocalRetriever:
           chunks from graph-related files for richer context.
         """
         q_emb = self._embed(query)
-        if lexical:
+        if lexical and settings.lexical_alpha > 0:
             pool = max(top_k * 4, 20)
             candidates = self.retrieve(query, top_k=pool, query_embedding=q_emb)
-            hits = fuse_lexical(query, candidates, top_k)
+            hits = fuse_lexical(query, candidates, top_k, alpha=settings.lexical_alpha)
         else:
             hits = self.retrieve(query, top_k=top_k, query_embedding=q_emb)
         if not expand:
