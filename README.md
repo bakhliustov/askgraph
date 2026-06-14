@@ -111,6 +111,14 @@ The TUI (`askgraph tui .`) puts the same data in a chat interface — a god-node
 
 > **Performance note.** Embedding runs on CPU (~hundreds of chunks/min depending on chunk length), so the *first* index of a large repo takes a few minutes; queries afterward are instant. `askgraph` skips machine-generated/vendored blobs by default — `autogen/`, `generated/`, and files larger than `ASKGRAPH_MAX_FILE_BYTES` (256 KB) — which keeps tinygrad's giant `runtime/autogen/` ctypes bindings out of the index. Tune the scope by pointing `askgraph` at a subpackage (`askgraph index path/to/pkg`).
 
+### Also tried on (multi-language)
+
+`askgraph` builds **one** graph across languages in a repo. On [`karpathy/llm-council`](https://github.com/karpathy/llm-council) — a Python backend + React (JSX) frontend — a single index spans 7 Python, 7 JSX, and 3 JS files: **70 nodes, 50 symbols** (Python functions/classes alongside React components and arrow-function handlers), **100% with git provenance**.
+
+![askgraph graph.html — karpathy/llm-council Python + React graph](docs/graph-llm-council.png)
+
+[`karpathy/autoresearch`](https://github.com/karpathy/autoresearch) (Python) indexes to 54 nodes / 50 symbols in seconds. JS/TS parsing needs the `tree-sitter-full` extra.
+
 ## Use with AI agents (MCP)
 
 ```bash
