@@ -105,6 +105,10 @@ nn/__init__.py :: class Linear
   — Tensor.requires_grad -> is_param (#16325)  (+4 prior changes)
 ```
 
+The TUI (`askgraph tui .`) puts the same data in a chat interface — a god-node sidebar with per-symbol commit info, a provenance panel, and synthesized answers:
+
+![askgraph TUI — chat with god-node sidebar and provenance](docs/tui.png)
+
 > **Performance note.** Embedding runs on CPU (~hundreds of chunks/min depending on chunk length), so the *first* index of a large repo takes a few minutes; queries afterward are instant. `askgraph` skips machine-generated/vendored blobs by default — `autogen/`, `generated/`, and files larger than `ASKGRAPH_MAX_FILE_BYTES` (256 KB) — which keeps tinygrad's giant `runtime/autogen/` ctypes bindings out of the index. Tune the scope by pointing `askgraph` at a subpackage (`askgraph index path/to/pkg`).
 
 ## Use with AI agents (MCP)
