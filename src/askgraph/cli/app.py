@@ -631,3 +631,59 @@ def mcp(
 
 if __name__ == "__main__":
     app()
+
+
+@app.command()
+def watch(
+    path: Annotated[
+        Path,
+        typer.Argument(help="Path to the directory to watch and keep indexed live."),
+    ] = Path("."),
+    interval: Annotated[
+        int, typer.Option("--interval", "-i", help="Polling interval in seconds")
+    ] = 5,
+) -> None:
+    """Live watch mode - re-index on file changes.
+
+    Perfect for long-running AI agent sessions where the codebase evolves.
+    Keeps the structural graph + semantic index fresh automatically.
+    """
+    target = path.resolve()
+    console.print(
+        Panel.fit(
+            f"[bold]Watching[/bold] {target} every {interval}s\n"
+            "Press Ctrl+C to stop. Incremental updates only.",
+            title="askgraph watch",
+            border_style="green",
+        )
+    )
+
+    import time
+    from askgraph.indexing.indexer import LocalIndexer
+    from askgraph.utils.discovery import discover_files
+
+    last_mtimes = {}
+
+    try:
+        while True:
+            files = discover_files(target)
+            changed = []
+            for f in files:
+                try:
+                    mtime = f.stat().st_mtime
+                    key = str(f)
+                    if key not in last_mtimes or mtime > last_mtimes[key]:
+                        changed.append(f)
+                        last_mtimes[key] = mtime
+                except OSError:
+                    continue
+
+            if changed:
+                console.print(f"[yellow]Detected {len(changed)} changed file(s) - updating index...[/yellow]")
+                indexer = LocalIndexer(target)
+                indexer.index_codebase(force=False, show_progress=False, no_report=True)
+                console.print("[green]Index refreshed.[/green]")
+
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        console.print("\n[bold]Watch stopped.[/bold]")

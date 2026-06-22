@@ -109,7 +109,12 @@ def _minmax(values: list[float]) -> list[float]:
 
 
 def fuse_lexical(
-    query: str, candidates: list[dict[str, Any]], top_k: int, alpha: float = 0.5
+    query: str,
+    candidates: list[dict[str, Any]],
+    top_k: int,
+    alpha: float = 0.5,
+    graph_data: dict[str, Any] | None = None,
+    graph_boost_weight: float = 0.1,
 ) -> list[dict[str, Any]]:
     """Re-rank vector candidates by blending vector similarity with lexical score.
 
@@ -130,7 +135,37 @@ def fuse_lexical(
     lex = [lexical_score(q_terms, c) for c in candidates]
     sims_n, lex_n = _minmax(sims), _minmax(lex)
 
-    scored = [(c, (1 - alpha) * sims_n[i] + alpha * lex_n[i]) for i, c in enumerate(candidates)]
+# Optional graph degree boost (new graph technique enhancement)
+    graph_boost = [0.0] * len(candidates)
+    if graph_data and graph_boost_weight > 0:
+        degrees: dict[str, int] = {}
+        for edge in graph_data.get("edges", []):
+            src = edge.get("source")
+            tgt = edge.get("target")
+            if src:
+                degrees[src] = degrees.get(src, 0) + 1
+            if tgt:
+                degrees[tgt] = degrees.get(tgt, 0) + 1
+        max_deg = max(degrees.values()) if degrees else 1
+        for i, c in enumerate(candidates):
+            meta = c.get("metadata", {}) or {}
+            sym = meta.get("symbol")
+            fp = meta.get("file_path")
+            if sym and fp:
+                sym_id = f"symbol:{fp}:{sym}"
+                deg = degrees.get(sym_id, 0)
+                graph_boost[i] = deg / max_deg if max_deg > 0 else 0.0
+            elif fp:
+                file_id = f"file:{fp}"
+                deg = degrees.get(file_id, 0)
+                graph_boost[i] = deg / max_deg if max_deg > 0 else 0.0
+        graph_boost = _minmax(graph_boost)
+
+    scored = []
+    for i, c in enumerate(candidates):
+        base = (1 - alpha) * sims_n[i] + alpha * lex_n[i]
+        g_boost = graph_boost_weight * graph_boost[i]
+        scored.append((c, base + g_boost))
     scored.sort(key=lambda pair: pair[1], reverse=True)
     return [c for c, _ in scored[:top_k]]
 

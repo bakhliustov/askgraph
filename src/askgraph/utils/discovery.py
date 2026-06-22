@@ -42,6 +42,50 @@ DEFAULT_IGNORES = [
 ]
 
 
+def _try_git_ls_files(root: Path, extensions: list[str]) -> list[Path] | None:
+    """Try to use `git ls-files` for accurate, fast discovery (respects .gitignore perfectly).
+
+    Falls back to None if not a git repo or git unavailable. Uses subprocess to avoid
+    requiring GitPython for core discovery (GitPython remains optional for blame).
+    """
+    import subprocess
+
+    try:
+        # Check if inside a git repo
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0 or result.stdout.strip() != "true":
+            return None
+
+        # Get tracked + untracked files (respecting .gitignore)
+        ls_result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if ls_result.returncode != 0:
+            return None
+
+        files: list[Path] = []
+        for line in ls_result.stdout.splitlines():
+            if not line.strip():
+                continue
+            p = (root / line.strip()).resolve()
+            if p.is_file() and any(p.suffix == ext or str(p).endswith(ext) for ext in extensions):
+                # Still apply size filter later; git ls-files already respects ignores
+                files.append(p)
+        return files
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+
+
 def discover_files(
     root: Path,
     extensions: list[str] | None = None,
@@ -49,7 +93,8 @@ def discover_files(
 ) -> list[Path]:
     """Recursively discover source files under root.
 
-    For MVP we focus on common code extensions. Later we will read .gitignore properly.
+    Prefers `git ls-files` when inside a git repository (fast + perfect .gitignore semantics).
+    Falls back to rglob + fnmatch for non-git dirs or when git unavailable.
     """
     if extensions is None:
         extensions = [
@@ -71,6 +116,26 @@ def discover_files(
     files: list[Path] = []
     skipped_large = 0
 
+    # Preferred path: git ls-files (accurate ignores, fast on large repos)
+    git_files = _try_git_ls_files(root, extensions) if respect_gitignore else None
+    if git_files is not None:
+        for path in git_files:
+            if settings.max_file_bytes > 0:
+                try:
+                    if path.stat().st_size > settings.max_file_bytes:
+                        skipped_large += 1
+                        continue
+                except OSError:
+                    continue
+            files.append(path)
+        if skipped_large:
+            logger.info(
+                "Skipped %d oversized file(s) (> %d bytes)", skipped_large, settings.max_file_bytes
+            )
+        logger.info("Discovered %d files under %s (via git ls-files)", len(files), root)
+        return sorted(files)
+
+    # Fallback: original rglob + fnmatch (improved ignore handling kept for non-git case)
     gitignore_path = root / ".gitignore"
     extra_ignores: list[str] = []
     if respect_gitignore and gitignore_path.exists():
@@ -123,5 +188,5 @@ def discover_files(
         logger.info(
             "Skipped %d oversized file(s) (> %d bytes)", skipped_large, settings.max_file_bytes
         )
-    logger.info("Discovered %d files under %s", len(files), root)
+    logger.info("Discovered %d files under %s (fallback rglob)", len(files), root)
     return sorted(files)

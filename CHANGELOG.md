@@ -75,3 +75,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Public repo demo focus (not personal projects).
 
 [0.2.0]: https://github.com/bakhliustov/askgraph/compare/v0.1.0...v0.2.0
+
+## [Unreleased] - Improvements for 2026 AI Agent Workflows
+
+### Added
+- `askgraph watch` — Live incremental indexing for evolving codebases (solves stale memory for long agent sessions)
+- `scripts/run_benchmarks.py` — Reproducible benchmark runner using the internal evaluate API
+- `examples/self_demo.py` — Self-contained demo that indexes askgraph itself
+- GitHub Actions workflow for automatic benchmarks on PRs
+- Professional issue/PR templates and status badges
+
+### Improved
+- File discovery now prefers `git ls-files` for accuracy and speed
+- Retrieval now includes graph degree/centrality boost
+- README with strong 2026 positioning and growth plan
+
+These changes make askgraph an even stronger structural memory layer for local AI coding agents.

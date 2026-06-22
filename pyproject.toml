@@ -60,6 +60,9 @@ viz = [
 git = [
     "GitPython>=3.1",
 ]
+watch = [
+    "watchdog>=4.0",
+]
 tui = [
     "textual>=0.80",
 ]

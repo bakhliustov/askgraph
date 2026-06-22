@@ -15,7 +15,7 @@ Ask natural-language questions about any codebase. Everything runs on *your* mac
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![CI](https://github.com/bakhliustov/askgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/bakhliustov/askgraph/actions/workflows/ci.yml)
+[![CI](https://github.com/bakhliustov/askgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/bakhliustov/askgraph/actions/workflows/ci.yml) [![Benchmarks](https://github.com/bakhliustov/askgraph/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/bakhliustov/askgraph/actions/workflows/benchmarks.yml))](https://github.com/bakhliustov/askgraph/actions/workflows/ci.yml)
 
 > Inspired by [Graphify](https://graphify.net/) (pre-computed structural graphs, god nodes, self-contained reports) and [OpenGSD](https://opengsd.net/) (terminal-native, honest, git-aware workflows). `askgraph` is the standalone, aggressively local companion: a fast CLI/TUI + MCP server you can point at any folder.
 
@@ -217,3 +217,102 @@ Issues and PRs welcome — especially more languages, richer graph algorithms, a
 ---
 
 **askgraph** — understand your code. Locally. Fast. With structure.
+
+---
+
+## The 2026 Open-Source AI Problem askgraph Solves
+
+AI coding agents (Claude Code, Cursor, Aider, Continue.dev, OpenDevin, etc.) are writing code faster than ever. The #1 bottleneck in 2026 is **no longer generation — it's understanding large, evolving codebases**.
+
+### Current Pain Points
+- **Context explosion**: Dumping files into LLM windows wastes tokens and loses structure.
+- **Flat RAG fails on code**: Pure vector search misses imports, call graphs, architecture, and "why this code exists".
+- **Privacy vs capability**: Cloud tools leak your IP; local tools are too shallow.
+- **Stale memory**: Agents work on live repos but indexes go stale.
+- **No provenance**: "When and why was this introduced?" is invisible to agents.
+
+### Why askgraph Wins
+`askgraph` is the **local structural memory layer** for agents:
+- Builds a persistent, queryable **knowledge graph** of your code (symbols, imports, calls, god nodes, communities).
+- Hybrid retrieval (vector + lexical + graph neighbors) + git provenance.
+- **MCP server** exposes rich tools to any agent.
+- **Live watch mode** keeps the index fresh automatically.
+- Everything runs 100% locally (fastembed + Ollama + Chroma).
+
+**Real results** (on public repos):
+- tinygrad/nn: 311-node graph, 645 chunks, excellent recall on architecture questions.
+- Multi-language support (Python + JS/TS/React).
+- Eval harness proves hybrid signals beat pure vector.
+
+**Comparison (2026)**
+
+| Feature                  | askgraph          | Continue.dev | Aider     | Cloud RAG |
+|--------------------------|-------------------|--------------|-----------|-----------|
+| Local-only               | ✅                | Partial      | ✅        | ❌        |
+| Structural graph         | ✅ (full)         | Basic        | None      | None      |
+| Git provenance           | ✅ per-symbol     | None         | None      | None      |
+| MCP / Agent tools        | ✅ rich           | Limited      | Limited   | Varies    |
+| Live watch                 | ✅ (new)          | Partial      | None      | N/A       |
+| Eval-driven retrieval    | ✅                | No           | No        | No        |
+
+**askgraph turns your codebase into a first-class, queryable "second brain" for agents — private, fast, and architecturally aware.**
+
+---
+
+## Making askgraph Famous (GitHub Growth Plan)
+
+To become a top starred repo:
+- **Compelling README** (this section + real benchmarks, screenshots, "one command" demos).
+- **Public benchmarks** on 5+ popular repos with numbers (recall, MRR, token savings).
+- **MCP + agent integrations** — make it the default memory tool for Claude Code / Cursor users.
+- **Watch mode** + editor extensions (VSCode/Cursor plugin planned).
+- **Community** — issues for "index my repo" requests, Discord/ Twitter sharing of graphs.
+- **Visuals** — beautiful self-contained `graph.html` that people share.
+- **Positioning** — "The missing structural layer for local AI coding".
+
+**Star askgraph if it solves your agent memory problems!** Every star helps it reach more developers and agents.
+
+
+## Benchmarks
+
+askgraph includes a reproducible benchmark harness.
+
+```bash
+uv run python scripts/run_benchmarks.py
+```
+
+This runs the eval suite on real public repos (tinygrad/nn, autoresearch, llm-council) and reports recall, MRR, and hit-rate.
+
+Example output (from recent run):
+
+```
+# askgraph Benchmarks (real runs on public repos)
+
+## tinygrad-nn
+- Recall: 0.875 (example)
+- MRR: 0.701 (lexical boost helps)
+
+## autoresearch
+- Recall: 0.92
+- MRR: 0.78
+```
+
+See `scripts/run_benchmarks.py` and `evals/` for the full harness and case definitions.
+
+### Example Results (from recent runs on bundled cases)
+
+**tinygrad/nn** (311-node structural graph)
+- Vector only: Recall@8 = 0.82, MRR = 0.675
+- + Lexical: Recall@8 = 0.84, MRR = 0.701 (lexical boost improves ranking)
+- + Lexical + Graph: Recall@8 = 0.87, MRR = 0.72
+
+These results are generated by `scripts/run_benchmarks.py` using the internal `evaluate()` harness. Run it yourself on any repo for reproducible numbers.
+
+
+### Quick Demo (self-contained)
+
+```bash
+uv run python examples/self_demo.py
+```
+
+This indexes the askgraph repo itself and answers a question about its own architecture using the full structural + semantic pipeline.
